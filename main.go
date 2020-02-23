@@ -97,11 +97,10 @@ func handleGet(w http.ResponseWriter, r *http.Request) {
 		}
 
 		err = cache.put(fullUrl, body)
-
-		// Do not fail. Even if the put failed, the end user would be sad if he
-		// gets an error, even if the proxy alone works.
 		if err != nil {
 			sigolo.Error("Could not write into cache: %s", err)
+			handleError(err, w)
+			return
 		}
 
 		w.Write(body)
