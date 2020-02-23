@@ -1,29 +1,115 @@
 package main
 
 import (
-	"log"
-	"net/http"
 	"os"
+	"fmt"
+	"io/ioutil"
+	"net/http"
+	"time"
 
-	"github.com/gin-gonic/gin"
-	_ "github.com/heroku/x/hmetrics/onload"
+	"github.com/hauke96/sigolo"
 )
 
-func main() {
-	port := os.Getenv("PORT")
+const configPath = "./tiny.json"
 
+var config *Config
+var cache *Cache
+
+var client *http.Client
+
+func main() {
+	prepare()
+
+	sigolo.Info("Ready to serve")
+
+	port := os.Getenv("PORT")
 	if port == "" {
-		log.Fatal("$PORT must be set")
+		fmt.Println("$PORT must be set")
+		return
 	}
 
-	router := gin.New()
-	router.Use(gin.Logger())
-	router.LoadHTMLGlob("templates/*.tmpl.html")
-	router.Static("/static", "static")
+	server := &http.Server{
+		Addr:         ":" + port,
+		WriteTimeout: 30 * time.Second,
+		ReadTimeout:  30 * time.Second,
+		Handler:      http.HandlerFunc(handleGet),
+	}
 
-	router.GET("/", func(c *gin.Context) {
-		c.HTML(http.StatusOK, "index.tmpl.html", nil)
-	})
+	err := server.ListenAndServe()
+	if err != nil {
+		sigolo.Fatal(err.Error())
+	}
+}
 
-	router.Run(":" + port)
+func configureLogging() {
+	sigolo.FormatFunctions[sigolo.LOG_INFO] = sigolo.LogPlain
+	//sigolo.LogLevel = sigolo.LOG_DEBUG
+}
+
+func prepare() {
+	var err error
+
+	sigolo.Info("Load config")
+	config, err = LoadConfig(configPath)
+	if err != nil {
+		sigolo.Fatal("Could not read config: '%s'", err.Error())
+	}
+
+	sigolo.Info("Init cache")
+	cache, err = CreateCache(config.CacheFolder)
+
+	if err != nil {
+		sigolo.Fatal("Could not init cache: '%s'", err.Error())
+	}
+
+	client = &http.Client{
+		Timeout: time.Second * 30,
+	}
+}
+
+func handleGet(w http.ResponseWriter, r *http.Request) {
+	fullUrl := r.URL.Path + "?" + r.URL.RawQuery
+
+	sigolo.Info("Requested '%s'", fullUrl)
+
+	// Only pass request to target host when cache does not has an entry for the
+	// given URL.
+	if cache.has(fullUrl) {
+		content, err := cache.get(fullUrl)
+
+		if err != nil {
+			handleError(err, w)
+		} else {
+			w.Write(content)
+		}
+	} else {
+		response, err := client.Get(config.Target + fullUrl)
+		if err != nil {
+			handleError(err, w)
+			return
+		}
+
+		body, err := ioutil.ReadAll(response.Body)
+		response.Body.Close()
+		if err != nil {
+			handleError(err, w)
+			return
+		}
+
+		err = cache.put(fullUrl, body)
+
+		// Do not fail. Even if the put failed, the end user would be sad if he
+		// gets an error, even if the proxy alone works.
+		if err != nil {
+			sigolo.Error("Could not write into cache: %s", err)
+		}
+
+		w.Write(body)
+	}
+}
+
+func handleError(err error, w http.ResponseWriter) {
+	sigolo.Error(err.Error())
+	w.WriteHeader(500)
+	fmt.Fprintf(w, err.Error())
 }

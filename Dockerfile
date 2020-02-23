@@ -16,6 +16,6 @@ FROM heroku/heroku:18
 COPY --from=build /app /app
 ENV HOME /app
 WORKDIR /app
-RUN useradd -m heroku
-USER heroku
+# RUN useradd -m heroku
+# USER heroku
 CMD /app/bin/go-getting-started

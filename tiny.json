@@ -1,0 +1,4 @@
+{
+	"target": "https://api.blockcypher.com/",
+	"cache_folder": "./cache/"
+}
