@@ -1,10 +1,10 @@
 package main
 
 import (
-	"os"
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/hauke96/sigolo"
@@ -96,13 +96,16 @@ func handleGet(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if response.StatusCode < 200 || response.StatusCode >= 300 {
+			goto write
+		}
 		err = cache.put(fullUrl, body)
 		if err != nil {
 			sigolo.Error("Could not write into cache: %s", err)
 			handleError(err, w)
 			return
 		}
-
+	write:
 		w.Write(body)
 	}
 }
