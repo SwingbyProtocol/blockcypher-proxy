@@ -1,4 +1,4 @@
 {
 	"target": "https://api.blockcypher.com/",
-	"cache_folder": "/app/cache/"
+	"cache_folder": "./cache/"
 }
